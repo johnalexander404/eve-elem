@@ -7,7 +7,6 @@ export default function PhoneLogin() {
   const [phoneNumber, setPhoneNumber] = useState('')
   const [verificationId, setVerificationId] = useState('')
   const [otp, setOtp] = useState('')
-  const { signInWithPhone, verifyOtp } = useAuth()
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,7 +30,17 @@ export default function PhoneLogin() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await verifyOtp(verificationId, otp)
+      const response = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber, code: otp})
+      })
+      const data = await response.json()
+      if (data.success) {
+        setVerificationId(data.verificationSid)
+      } else {
+        throw new Error(data.error)
+      }
     } catch (error) {
       console.error('Error verifying OTP:', error)
     }

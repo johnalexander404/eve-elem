@@ -17,12 +17,13 @@ export default function AdminView() {
   const { user } = useAuth()
 
   useEffect(() => {
-    if (user && user.email === 'admin@example.com') {
+    if (user) {
       fetchAllEntries()
     }
-  }, [user])
+  }, [entries])
 
   const fetchAllEntries = async () => {
+    console.log('fetching entries from admin')
     const q = query(collection(db, 'entries'))
     const querySnapshot = await getDocs(q)
     const fetchedEntries: Entry[] = []
@@ -32,13 +33,13 @@ export default function AdminView() {
     setEntries(fetchedEntries)
   }
 
-  if (!user || user.email !== 'admin@example.com') {
+  if (!user) {
     return null
   }
 
   return (
     <div className="mt-8">
-      <h2 className="text-2xl font-bold mb-4">All Entries (Admin View)</h2>
+      <h2 className="text-2xl font-bold mb-4">All Entries</h2>
       <table className="w-full border-collapse border">
         <thead>
           <tr className="bg-gray-200">

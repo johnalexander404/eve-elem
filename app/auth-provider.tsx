@@ -1,18 +1,19 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut, 
-  User,
+import {createContext, ReactNode, useContext, useEffect, useState} from 'react'
+import {
+  ApplicationVerifier,
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
   PhoneAuthProvider,
   signInWithCredential,
-  onAuthStateChanged
+  signInWithPopup,
+  signOut,
+  User
 } from 'firebase/auth'
-import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import {initializeApp} from 'firebase/app'
+import {getFirestore} from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -66,9 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithPhone = async (phoneNumber: string) => {
     const provider = new PhoneAuthProvider(auth)
+    const appVerifier: ApplicationVerifier = {
+        type: 'recaptcha',
+        verify: async () => ''
+    }
     try {
-      const verificationId = await provider.verifyPhoneNumber(phoneNumber, 60)
-      return verificationId
+      return await provider.verifyPhoneNumber(phoneNumber, appVerifier)
     } catch (error) {
       console.error('Error sending OTP:', error)
       throw error

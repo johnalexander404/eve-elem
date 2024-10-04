@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../auth-provider'
 import { getFirestore, collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore'
-import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend, getYear } from 'date-fns'
+import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
 
 const db = getFirestore()
 
@@ -38,15 +38,14 @@ export default function Calendar() {
   const { user } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-
   useEffect(() => {
     if (user) {
       fetchEntries()
     }
-  }, [user, currentDate])
+  }, [user, currentDate, entries])
 
   const fetchEntries = async () => {
+    console.log('fetching entries')
     const startDate = startOfMonth(currentDate)
     const endDate = endOfMonth(currentDate)
     const q = query(
@@ -66,11 +65,15 @@ export default function Calendar() {
     if (!user || isWeekend(date) || isHoliday(date)) return
 
     const dateString = format(date, 'yyyy-MM-dd')
-    const existingEntry = entries.find(entry => entry.date === dateString && entry.time === time && entry.username === (user.email || user.phoneNumber))
+    const existingEntry = entries.find(entry => entry.date === dateString && entry.time === time)
 
     if (existingEntry) {
-      if (confirm('Are you sure you want to remove your entry?')) {
-        await deleteDoc(doc(db, 'entries', existingEntry.id))
+      if (existingEntry.username == (user.email || user.phoneNumber)) {
+        if (confirm('Are you sure you want to remove your entry?')) {
+          await deleteDoc(doc(db, 'entries', existingEntry.id))
+        }
+      } else {
+        alert(`this slot is taken by ${existingEntry.username}`)
       }
     } else {
       if (confirm('Are you sure you want to sign up for this slot?')) {
@@ -78,7 +81,7 @@ export default function Calendar() {
           date: dateString,
           time,
           username: user.email || user.phoneNumber
-        })
+        });
       }
     }
 
@@ -100,13 +103,6 @@ export default function Calendar() {
         role={isDisabled ? 'presentation' : 'button'}
         aria-disabled={isDisabled}
       >
-        {isTaken && !isDisabled && (
-          <div className="relative w-full h-full">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-full h-0.5 bg-black transform -rotate-45"></div>
-            </div>
-          </div>
-        )}
       </div>
     )
   }
