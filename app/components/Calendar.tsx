@@ -42,7 +42,7 @@ export default function Calendar() {
     if (user) {
       fetchEntries()
     }
-  }, [user, currentDate, entries])
+  }, [user, currentDate])
 
   const fetchEntries = async () => {
     console.log('fetching entries')
