@@ -1,8 +1,6 @@
 'use client'
 
-import { useState } from 'react'
 import { useAuth } from '../auth-provider'
-import PhoneLogin from './PhoneLogin'
 
 export default function Login() {
   const { user, signInWithGoogle, signOut } = useAuth()

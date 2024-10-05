@@ -1,6 +1,6 @@
 'use client'
 
-import {createContext, ReactNode, useContext, useEffect, useState} from 'react'
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react'
 import {
   ApplicationVerifier,
   getAuth,
@@ -12,8 +12,8 @@ import {
   signOut,
   User
 } from 'firebase/auth'
-import {initializeApp} from 'firebase/app'
-import {getFirestore} from 'firebase/firestore'
+import { initializeApp } from 'firebase/app'
+import { getFirestore, collection, query, getDocs } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -30,6 +30,7 @@ export const db = getFirestore(app)
 
 interface AuthContextType {
   user: User | null
+  isAdmin: boolean
   signInWithGoogle: () => Promise<void>
   signInWithPhone: (phoneNumber: string) => Promise<string>
   verifyOtp: (verificationId: string, otp: string) => Promise<void>
@@ -38,6 +39,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  isAdmin: false,
   signInWithGoogle: async () => {},
   signInWithPhone: async () => '',
   verifyOtp: async () => {},
@@ -48,13 +50,44 @@ export const useAuth = () => useContext(AuthContext)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean>(false)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user)
+
+      // Check if the user is an admin by querying the Firestore collection
+      if (user) {
+        const userEmail = user.email || ''
+        const isAdminUser = await checkIfAdmin(userEmail)
+        setIsAdmin(isAdminUser)
+      } else {
+        setIsAdmin(false)
+      }
     })
+
     return () => unsubscribe()
   }, [])
+
+  const checkIfAdmin = async (email: string): Promise<boolean> => {
+    try {
+      const q = query(collection(db, 'admins')) // Assuming the collection is named 'admins'
+      const querySnapshot = await getDocs(q)
+      const adminEmails: string[] = []
+
+      querySnapshot.forEach((doc) => {
+        const adminData = doc.data()
+        if (adminData.email) {
+          adminEmails.push(adminData.email) // Assumes each admin document has an "email" field
+        }
+      })
+
+      return adminEmails.includes(email)
+    } catch (error) {
+      console.error('Error checking admin status:', error)
+      return false
+    }
+  }
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider()
@@ -68,8 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithPhone = async (phoneNumber: string) => {
     const provider = new PhoneAuthProvider(auth)
     const appVerifier: ApplicationVerifier = {
-        type: 'recaptcha',
-        verify: async () => ''
+      type: 'recaptcha',
+      verify: async () => ''
     }
     try {
       return await provider.verifyPhoneNumber(phoneNumber, appVerifier)
@@ -98,8 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, signInWithGoogle, signInWithPhone, verifyOtp, signOut: signOutUser }}>
-      {children}
-    </AuthContext.Provider>
+      <AuthContext.Provider value={{ user, isAdmin, signInWithGoogle, signInWithPhone, verifyOtp, signOut: signOutUser }}>
+        {children}
+      </AuthContext.Provider>
   )
 }

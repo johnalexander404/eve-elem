@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from '../auth-provider'
 
 export default function PhoneLogin() {
   const [phoneNumber, setPhoneNumber] = useState('')

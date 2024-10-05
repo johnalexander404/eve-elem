@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { collection, query, getDocs } from 'firebase/firestore'
+import { collection, query, onSnapshot } from 'firebase/firestore'
 import { db } from '../auth-provider'
 import { useAuth } from '../auth-provider'
 
@@ -14,50 +14,54 @@ interface Entry {
 
 export default function AdminView() {
   const [entries, setEntries] = useState<Entry[]>([])
-  const { user } = useAuth()
+  const {isAdmin } = useAuth()
 
   useEffect(() => {
-    if (user) {
-      fetchAllEntries()
+    let unsubscribe = () => {}
+
+    if (isAdmin) {
+      console.log('fetching entries');
+      // Set up real-time listener for Firestore
+      const q = query(collection(db, 'entries'))
+
+      unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const fetchedEntries: Entry[] = []
+        querySnapshot.forEach((doc) => {
+          fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
+        })
+        setEntries(fetchedEntries)
+      })
     }
-  }, [entries])
 
-  const fetchAllEntries = async () => {
-    console.log('fetching entries from admin')
-    const q = query(collection(db, 'entries'))
-    const querySnapshot = await getDocs(q)
-    const fetchedEntries: Entry[] = []
-    querySnapshot.forEach((doc) => {
-      fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
-    })
-    setEntries(fetchedEntries)
-  }
+    // Cleanup the listener when component unmounts or user changes
+    return () => unsubscribe()
+  }, [isAdmin])
 
-  if (!user) {
+  if (!isAdmin) {
     return null
   }
 
   return (
-    <div className="mt-8">
-      <h2 className="text-2xl font-bold mb-4">All Entries</h2>
-      <table className="w-full border-collapse border">
-        <thead>
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4">All Entries</h2>
+        <table className="w-full border-collapse border">
+          <thead>
           <tr className="bg-gray-200">
             <th className="border p-2">Date</th>
             <th className="border p-2">Time</th>
             <th className="border p-2">Username</th>
           </tr>
-        </thead>
-        <tbody>
+          </thead>
+          <tbody>
           {entries.map((entry) => (
-            <tr key={entry.id}>
-              <td className="border p-2">{entry.date}</td>
-              <td className="border p-2">{entry.time}</td>
-              <td className="border p-2">{entry.username}</td>
-            </tr>
+              <tr key={entry.id}>
+                <td className="border p-2">{entry.date}</td>
+                <td className="border p-2">{entry.time}</td>
+                <td className="border p-2">{entry.username}</td>
+              </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+          </tbody>
+        </table>
+      </div>
   )
 }

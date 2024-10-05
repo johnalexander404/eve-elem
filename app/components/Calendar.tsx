@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '../auth-provider'
-import { getFirestore, collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore'
+import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore'
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
 
 const db = getFirestore()
@@ -35,31 +35,35 @@ const isHoliday = (date: Date) => {
 }
 
 export default function Calendar() {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
   const [currentDate, setCurrentDate] = useState(new Date())
-  useEffect(() => {
-    if (user) {
-      fetchEntries()
-    }
-  }, [user, currentDate])
 
-  const fetchEntries = async () => {
-    console.log('fetching entries')
-    const startDate = startOfMonth(currentDate)
-    const endDate = endOfMonth(currentDate)
-    const q = query(
-      collection(db, 'entries'),
-      where('date', '>=', format(startDate, 'yyyy-MM-dd')),
-      where('date', '<=', format(endDate, 'yyyy-MM-dd'))
-    )
-    const querySnapshot = await getDocs(q)
-    const fetchedEntries: Entry[] = []
-    querySnapshot.forEach((doc) => {
-      fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
-    })
-    setEntries(fetchedEntries)
-  }
+  useEffect(() => {
+    let unsubscribe = () => {}
+
+    if (user) {
+      const startDate = startOfMonth(currentDate)
+      const endDate = endOfMonth(currentDate)
+      const q = query(
+          collection(db, 'entries'),
+          where('date', '>=', format(startDate, 'yyyy-MM-dd')),
+          where('date', '<=', format(endDate, 'yyyy-MM-dd'))
+      )
+
+      // Set up real-time listener
+      unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const fetchedEntries: Entry[] = []
+        querySnapshot.forEach((doc) => {
+          fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
+        })
+        setEntries(fetchedEntries)
+      })
+    }
+
+    // Cleanup the listener when component unmounts or currentDate/user changes
+    return () => unsubscribe()
+  }, [user, currentDate])
 
   const handleEntryClick = async (date: Date, time: string) => {
     if (!user || isWeekend(date) || isHoliday(date)) return
@@ -73,7 +77,13 @@ export default function Calendar() {
           await deleteDoc(doc(db, 'entries', existingEntry.id))
         }
       } else {
-        alert(`this slot is taken by ${existingEntry.username}`)
+        if (isAdmin) {
+          if (confirm(`Entry taken by ${existingEntry.username}. Do you want to remove this entry?`)) {
+            await deleteDoc(doc(db, 'entries', existingEntry.id))
+          }
+        }else {
+          alert(`This slot is taken`)
+        }
       }
     } else {
       if (confirm('Are you sure you want to sign up for this slot?')) {
@@ -84,26 +94,33 @@ export default function Calendar() {
         });
       }
     }
-
-    fetchEntries()
   }
 
   const renderTimeSlot = (date: Date, time: string) => {
     const dateString = format(date, 'yyyy-MM-dd')
     const entry = entries.find(e => e.date === dateString && e.time === time)
     const isUserEntry = entry && entry.username === (user?.email || user?.phoneNumber)
-    const isTaken = !!entry
+    const isTakenByOther = entry && entry.username !== (user?.email || user?.phoneNumber)
     const isDisabled = isWeekend(date) || isHoliday(date)
 
+    // Determine the color code based on who has taken the slot
+    let slotColor = 'bg-green-500' // Available by default
+    if (isDisabled) {
+      slotColor = 'bg-gray-300' // Disabled (weekend/holiday)
+    } else if (isUserEntry) {
+      slotColor = 'bg-amber-500' // Taken by the logged-in user (amber)
+    } else if (isTakenByOther) {
+      slotColor = 'bg-red-500' // Taken by someone else (red)
+    }
+
     return (
-      <div
-        key={`${dateString}-${time}`}
-        className={`h-2 w-full ${isDisabled ? 'bg-gray-300 cursor-not-allowed' : isTaken ? 'bg-red-500' : 'bg-green-500 cursor-pointer'} ${isUserEntry ? 'opacity-50' : ''}`}
-        onClick={() => !isDisabled && handleEntryClick(date, time)}
-        role={isDisabled ? 'presentation' : 'button'}
-        aria-disabled={isDisabled}
-      >
-      </div>
+        <div
+            key={`${dateString}-${time}`}
+            className={`h-2 w-full ${slotColor} cursor-pointer ${isUserEntry ? 'opacity-50' : ''}`}
+            onClick={() => !isDisabled && handleEntryClick(date, time)}
+            role={isDisabled ? 'presentation' : 'button'}
+            aria-disabled={isDisabled}
+        />
     )
   }
 
@@ -114,17 +131,17 @@ export default function Calendar() {
     const isDisabled = isWeekend(date) || isHoliday(date)
 
     return (
-      <div
-        key={date.toString()}
-        className={`border p-1 ${isCurrentMonth ? '' : 'bg-gray-100'} ${
-          isCurrentDay ? 'bg-blue-100' : ''
-        } ${isDisabled ? 'bg-gray-200' : ''}`}
-      >
-        <div className="text-xs mb-1">{dayString}</div>
-        <div className="space-y-1">
-          {timeSlots.map(time => renderTimeSlot(date, time))}
+        <div
+            key={date.toString()}
+            className={`border p-1 ${isCurrentMonth ? '' : 'bg-gray-100'} ${
+                isCurrentDay ? 'bg-blue-100' : ''
+            } ${isDisabled ? 'bg-gray-200' : ''}`}
+        >
+          <div className="text-xs mb-1">{dayString}</div>
+          <div className="space-y-1">
+            {timeSlots.map(time => renderTimeSlot(date, time))}
+          </div>
         </div>
-      </div>
     )
   }
 
@@ -134,48 +151,52 @@ export default function Calendar() {
   })
 
   return (
-    <div className="mt-8">
-      <h2 className="text-2xl font-bold mb-4">Volunteer Calendar</h2>
-      <div className="flex justify-between items-center mb-4">
-        <button
-          onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() - 1, 1))}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Previous Month
-        </button>
-        <h3 className="text-xl font-semibold">{format(currentDate, 'MMMM yyyy')}</h3>
-        <button
-          onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() + 1, 1))}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Next Month
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-1">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-          <div key={day} className="text-center font-bold">
-            {day}
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-4">Volunteer Calendar</h2>
+        <div className="flex justify-between items-center mb-4">
+          <button
+              onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() - 1, 1))}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            Previous Month
+          </button>
+          <h3 className="text-xl font-semibold">{format(currentDate, 'MMMM yyyy')}</h3>
+          <button
+              onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() + 1, 1))}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            Next Month
+          </button>
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+              <div key={day} className="text-center font-bold">
+                {day}
+              </div>
+          ))}
+          {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, index) => (
+              <div key={`empty-${index}`} className="border p-1"></div>
+          ))}
+          {daysInMonth.map(renderDay)}
+        </div>
+        <div className="mt-4 text-sm">
+          <div className="flex items-center">
+            <div className="w-4 h-4 bg-green-500 mr-2"></div>
+            <span>Available</span>
           </div>
-        ))}
-        {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, index) => (
-          <div key={`empty-${index}`} className="border p-1"></div>
-        ))}
-        {daysInMonth.map(renderDay)}
-      </div>
-      <div className="mt-4 text-sm">
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-green-500 mr-2"></div>
-          <span>Available</span>
-        </div>
-        <div className="flex items-center mt-1">
-          <div className="w-4 h-4 bg-red-500 mr-2"></div>
-          <span>Taken</span>
-        </div>
-        <div className="flex items-center mt-1">
-          <div className="w-4 h-4 bg-gray-300 mr-2"></div>
-          <span>Weekend/Holiday (Not Available)</span>
+          <div className="flex items-center mt-1">
+            <div className="w-4 h-4 bg-amber-500 mr-2"></div>
+            <span>Taken by You</span>
+          </div>
+          <div className="flex items-center mt-1">
+            <div className="w-4 h-4 bg-red-500 mr-2"></div>
+            <span>Taken by Someone Else</span>
+          </div>
+          <div className="flex items-center mt-1">
+            <div className="w-4 h-4 bg-gray-300 mr-2"></div>
+            <span>Weekend/Holiday (Not Available)</span>
+          </div>
         </div>
       </div>
-    </div>
   )
 }
