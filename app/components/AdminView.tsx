@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { collection, query, onSnapshot } from 'firebase/firestore'
 import { db } from '../auth-provider'
 import { useAuth } from '../auth-provider'
+import { useDate } from './DateProvider';
+import { startOfMonth } from 'date-fns'
 
 interface Entry {
   id: string
@@ -15,7 +17,7 @@ interface Entry {
 export default function AdminView() {
   const [entries, setEntries] = useState<Entry[]>([])
   const {isAdmin } = useAuth()
-
+  const { currentDate } = useDate();
   useEffect(() => {
     let unsubscribe = () => {}
 
@@ -26,16 +28,19 @@ export default function AdminView() {
 
       unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedEntries: Entry[] = []
+        setEntries([])
         querySnapshot.forEach((doc) => {
           fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
         })
-        setEntries(fetchedEntries)
+        fetchedEntries.map(entry => console.log(startOfMonth(entry.date), startOfMonth(currentDate)))
+        const filteredEntries=fetchedEntries.filter(entry => startOfMonth(entry.date).getTime() === startOfMonth(currentDate).getTime() ).sort((a, b) => a.date.localeCompare(b.date))
+        setEntries(filteredEntries)
       })
     }
 
     // Cleanup the listener when component unmounts or user changes
     return () => unsubscribe()
-  }, [isAdmin])
+  }, [isAdmin, currentDate])
 
   if (!isAdmin) {
     return null

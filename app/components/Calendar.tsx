@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../auth-provider'
 import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore'
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
+import { useDate } from './DateProvider';
 
 const db = getFirestore()
 
@@ -34,11 +35,12 @@ const isHoliday = (date: Date) => {
   return holidays.includes(formattedDate)
 }
 
+
+
 export default function Calendar() {
   const { user, isAdmin } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
-  const [currentDate, setCurrentDate] = useState(new Date())
-
+  const { currentDate, setCurrentDate } = useDate();
   useEffect(() => {
     let unsubscribe = () => {}
 
@@ -155,14 +157,14 @@ export default function Calendar() {
         <h2 className="text-2xl font-bold mb-4">Volunteer Calendar</h2>
         <div className="flex justify-between items-center mb-4">
           <button
-              onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() - 1, 1))}
+              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
               className="bg-blue-500 text-white px-4 py-2 rounded"
           >
             Previous Month
           </button>
           <h3 className="text-xl font-semibold">{format(currentDate, 'MMMM yyyy')}</h3>
           <button
-              onClick={() => setCurrentDate(date => new Date(date.getFullYear(), date.getMonth() + 1, 1))}
+              onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
               className="bg-blue-500 text-white px-4 py-2 rounded"
           >
             Next Month
