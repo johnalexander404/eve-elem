@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth-provider'
 import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
+import {User} from "firebase/auth";
 
 const db = getFirestore()
 
@@ -41,9 +42,16 @@ interface CalendarProps {
   setCurrentDate: (date: Date) => void
 }
 
+interface UserData {
+   id: string
+    name: string
+    email: string
+}
+
 export default function Calendar({ currentDate, setCurrentDate }: CalendarProps) {
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
+  const [users, setUsers] = useState< UserData[] >([])
 
   useEffect(() => {
     if (user) {
@@ -55,6 +63,15 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
           where('date', '<=', format(endDate, 'yyyy-MM-dd'))
       )
 
+      const uq = query(collection(db, 'users'))
+      const unsubscibeUsers = onSnapshot(uq, (querySnapshot) => {
+        const fetchedUsers: UserData[] = []
+        querySnapshot.forEach((doc) => {
+          fetchedUsers.push({ id: doc.id, ...doc.data() } as UserData)
+        })
+        setUsers(fetchedUsers)
+      });
+
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedEntries: Entry[] = []
         querySnapshot.forEach((doc) => {
@@ -63,7 +80,10 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
         setEntries(fetchedEntries)
       })
 
-      return () => unsubscribe()
+      return () => {
+        unsubscribe()
+        unsubscibeUsers()
+      }
     }
   }, [user, currentDate])
 
@@ -92,7 +112,19 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
           await updateDoc(doc(db, 'entries', existingEntry.id), { users: updatedUsers })
         }
       } else {
-        alert('This slot is already taken.')
+        if (isAdmin) {
+            const user = users.find(u => u.id === updatedUsers[slotIndex])
+            if (confirm(`This slot is already taken by ${user?.name} . Do you want to remove it?`)){
+              updatedUsers[slotIndex] = ''
+              if (updatedUsers.every(u => u === '')) {
+                await deleteDoc(doc(db, 'entries', existingEntry.id))
+              } else {
+                await updateDoc(doc(db, 'entries', existingEntry.id), {users: updatedUsers})
+              }
+            }
+        } else {
+          alert(`This slot is already taken by ${updatedUsers[slotIndex]}`)
+        }
       }
     } else {
       // Create a new entry
@@ -154,7 +186,7 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
         <div
             key={date.toString()}
             className={`border p-1 ${isCurrentMonth ? '' : 'bg-gray-100'} ${
-                isCurrentDay ? 'bg-blue-100' : ''
+                isCurrentDay ? 'bg-yellow-900' : ''
             } ${isDisabled ? 'bg-gray-200' : ''}`}
         >
           <div className={`text-xs mb-1 ${isDisabled ? 'text-gray-500' : ''}`}>{dayString}</div>

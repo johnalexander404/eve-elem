@@ -70,7 +70,7 @@ export default function AdminView({ currentDate }: { currentDate: Date }) {
     setUserData(fetchedUserData)
   }
 
-  if (!user || !isAdmin) {
+  if (!user || !isAdmin || !entries.length) {
     return null
   }
 
