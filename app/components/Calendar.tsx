@@ -53,7 +53,6 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
   const [users, setUsers] = useState< UserData[] >([])
 
   useEffect(() => {
-    if (user) {
       const startDate = startOfMonth(currentDate)
       const endDate = endOfMonth(currentDate)
       const q = query(
@@ -83,7 +82,6 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
         unsubscribe()
         unsubscibeUsers()
       }
-    }
   }, [user, currentDate])
 
   const handleEntryClick = async (date: Date, time: string, slotIndex: number) => {
@@ -180,7 +178,6 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
     const isCurrentMonth = isSameMonth(date, currentDate)
     const isCurrentDay = isToday(date)
     const isDisabled = isWeekend(date) || isHoliday(date)
-
     return (
         <div
             key={date.toString()}
@@ -219,8 +216,8 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
             Next Month
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+        <div className="grid grid-cols-5 gap-1">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
               <div key={day} className="text-center font-bold">
                 {day}
               </div>
@@ -228,7 +225,7 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
           {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, index) => (
               <div key={`empty-${index}`} className="border p-1"></div>
           ))}
-          {daysInMonth.map(renderDay)}
+          {daysInMonth.filter(day=>!isWeekend(day)).map(renderDay)}
         </div>
         <div className="mt-4 text-sm">
           <div className="flex items-center">
