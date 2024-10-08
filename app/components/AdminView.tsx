@@ -1,72 +1,117 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { collection, query, onSnapshot } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore'
 import { db } from '../auth-provider'
 import { useAuth } from '../auth-provider'
-import { useDate } from './DateProvider';
-import { startOfMonth } from 'date-fns'
+import { startOfMonth, endOfMonth, format } from 'date-fns'
 
 interface Entry {
   id: string
   date: string
   time: string
-  username: string
+  users: string[]
 }
 
-export default function AdminView() {
+interface UserData {
+  name: string
+  email: string
+  phoneNumber: string
+}
+
+export default function AdminView({ currentDate }: { currentDate: Date }) {
   const [entries, setEntries] = useState<Entry[]>([])
-  const {isAdmin } = useAuth()
-  const { currentDate } = useDate();
+  const [userData, setUserData] = useState<{ [key: string]: UserData }>({})
+  const { user, isAdmin } = useAuth()
+
   useEffect(() => {
-    let unsubscribe = () => {}
+    if (user && isAdmin) {
+      const startDate = startOfMonth(currentDate)
+      const endDate = endOfMonth(currentDate)
+      const q = query(
+          collection(db, 'entries'),
+          where('date', '>=', format(startDate, 'yyyy-MM-dd')),
+          where('date', '<=', format(endDate, 'yyyy-MM-dd'))
+      )
 
-    if (isAdmin) {
-      console.log('fetching entries');
-      // Set up real-time listener for Firestore
-      const q = query(collection(db, 'entries'))
-
-      unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedEntries: Entry[] = []
-        setEntries([])
         querySnapshot.forEach((doc) => {
           fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
         })
-        fetchedEntries.map(entry => console.log(startOfMonth(entry.date), startOfMonth(currentDate)))
-        const filteredEntries=fetchedEntries.filter(entry => startOfMonth(entry.date).getTime() === startOfMonth(currentDate).getTime() ).sort((a, b) => a.date.localeCompare(b.date))
-        setEntries(filteredEntries)
+        setEntries(fetchedEntries)
       })
+
+      return () => unsubscribe()
     }
+  }, [user, isAdmin, currentDate])
 
-    // Cleanup the listener when component unmounts or user changes
-    return () => unsubscribe()
-  }, [isAdmin, currentDate])
+  useEffect(() => {
+    if (entries.length > 0) {
+      fetchAllUserData()
+    }
+  }, [entries])
 
-  if (!isAdmin) {
+  const fetchAllUserData = async () => {
+    const userIds = new Set<string>()
+    entries.forEach(entry => entry.users.forEach(userId => {
+      if (userId) userIds.add(userId)
+    }))
+
+    const fetchedUserData: { [key: string]: UserData } = {}
+    const userIdsArray = Array.from(userIds)
+    for (let i = 0; i < userIdsArray.length; i++) {
+      const userId = userIdsArray[i]
+      const userDoc = await getDoc(doc(db, 'users', userId))
+      if (userDoc.exists()) {
+        fetchedUserData[userId] = userDoc.data() as UserData
+      }
+    }
+    setUserData(fetchedUserData)
+  }
+
+  if (!user || !isAdmin) {
     return null
   }
 
   return (
       <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">All Entries</h2>
-        <table className="w-full border-collapse border">
-          <thead>
-          <tr className="bg-gray-200">
-            <th className="border p-2">Date</th>
-            <th className="border p-2">Time</th>
-            <th className="border p-2">Username</th>
-          </tr>
-          </thead>
-          <tbody>
-          {entries.map((entry) => (
-              <tr key={entry.id}>
-                <td className="border p-2">{entry.date}</td>
-                <td className="border p-2">{entry.time}</td>
-                <td className="border p-2">{entry.username}</td>
-              </tr>
-          ))}
-          </tbody>
-        </table>
+        <h2 className="text-2xl font-bold mb-4">All Entries for {format(currentDate, 'MMMM yyyy')} (Admin View)</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse border">
+            <thead>
+            <tr className="bg-gray-200">
+              <th className="border p-2">Date</th>
+              <th className="border p-2">Time</th>
+              <th className="border p-2">Users</th>
+            </tr>
+            </thead>
+            <tbody>
+            {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td className="border p-2">{entry.date}</td>
+                  <td className="border p-2">{entry.time}</td>
+                  <td className="border p-2">
+                    <ul>
+                      {entry.users.map((userId, index) => (
+                          <li key={index}>
+                            {userId ? (
+                                <>
+                                  {userData[userId]?.name || 'Unknown'}
+                                  {userData[userId]?.email && ` (${userData[userId].email})`}
+                                </>
+                            ) : (
+                                'Empty slot'
+                            )}
+                          </li>
+                      ))}
+                    </ul>
+                  </td>
+                </tr>
+            ))}
+            </tbody>
+          </table>
+        </div>
       </div>
   )
 }

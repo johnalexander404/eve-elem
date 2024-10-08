@@ -13,7 +13,7 @@ import {
   User
 } from 'firebase/auth'
 import { initializeApp } from 'firebase/app'
-import { getFirestore, collection, query, getDocs } from 'firebase/firestore'
+import { getFirestore, collection, query, getDocs, getDoc, setDoc, doc } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -60,6 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (user) {
         const userEmail = user.email || ''
         const isAdminUser = await checkIfAdmin(userEmail)
+        const userDoc = await getDoc(doc(db, 'users', user.uid))
+        if (!userDoc.exists()) {
+          await setDoc(doc(db, 'users', user.uid), {
+            name: user.displayName,
+            email: user.email
+          })
+        }
         setIsAdmin(isAdminUser)
       } else {
         setIsAdmin(false)

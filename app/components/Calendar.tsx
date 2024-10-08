@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../auth-provider'
-import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore'
+import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
-import { useDate } from './DateProvider';
 
 const db = getFirestore()
 
@@ -12,12 +11,14 @@ interface Entry {
   id: string
   date: string
   time: string
-  username: string
+  users: string[]
 }
 
-const timeSlots = ['8:00 AM - 9:00 AM', '2:15 PM - 3:15 PM']
+const timeSlots = [
+  { label: 'AM', time: '8:00 AM - 9:00 AM' },
+  { label: 'PM', time: '2:15 PM - 3:15 PM' }
+]
 
-// US Public Holidays (2023, 2024, and 2025)
 const holidays = [
   // 2023 Holidays
   '2023-01-01', '2023-01-16', '2023-02-20', '2023-05-29', '2023-07-04',
@@ -35,15 +36,16 @@ const isHoliday = (date: Date) => {
   return holidays.includes(formattedDate)
 }
 
+interface CalendarProps {
+  currentDate: Date
+  setCurrentDate: (date: Date) => void
+}
 
-
-export default function Calendar() {
-  const { user, isAdmin } = useAuth()
+export default function Calendar({ currentDate, setCurrentDate }: CalendarProps) {
+  const { user } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
-  const { currentDate, setCurrentDate } = useDate();
-  useEffect(() => {
-    let unsubscribe = () => {}
 
+  useEffect(() => {
     if (user) {
       const startDate = startOfMonth(currentDate)
       const endDate = endOfMonth(currentDate)
@@ -53,76 +55,92 @@ export default function Calendar() {
           where('date', '<=', format(endDate, 'yyyy-MM-dd'))
       )
 
-      // Set up real-time listener
-      unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedEntries: Entry[] = []
         querySnapshot.forEach((doc) => {
           fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
         })
         setEntries(fetchedEntries)
       })
-    }
 
-    // Cleanup the listener when component unmounts or currentDate/user changes
-    return () => unsubscribe()
+      return () => unsubscribe()
+    }
   }, [user, currentDate])
 
-  const handleEntryClick = async (date: Date, time: string) => {
+  const handleEntryClick = async (date: Date, time: string, slotIndex: number) => {
     if (!user || isWeekend(date) || isHoliday(date)) return
 
     const dateString = format(date, 'yyyy-MM-dd')
     const existingEntry = entries.find(entry => entry.date === dateString && entry.time === time)
 
     if (existingEntry) {
-      if (existingEntry.username == (user.email || user.phoneNumber)) {
+      const updatedUsers = [...existingEntry.users]
+      if (updatedUsers[slotIndex] === user.uid) {
+        // Remove user from the slot
         if (confirm('Are you sure you want to remove your entry?')) {
-          await deleteDoc(doc(db, 'entries', existingEntry.id))
+          updatedUsers[slotIndex] = ''
+          if (updatedUsers.every(u => u === '')) {
+            await deleteDoc(doc(db, 'entries', existingEntry.id))
+          } else {
+            await updateDoc(doc(db, 'entries', existingEntry.id), { users: updatedUsers })
+          }
+        }
+      } else if (updatedUsers[slotIndex] === '') {
+        // Add user to the slot
+        if (confirm('Are you sure you want to sign up for this slot?')) {
+          updatedUsers[slotIndex] = user.uid
+          await updateDoc(doc(db, 'entries', existingEntry.id), { users: updatedUsers })
         }
       } else {
-        if (isAdmin) {
-          if (confirm(`Entry taken by ${existingEntry.username}. Do you want to remove this entry?`)) {
-            await deleteDoc(doc(db, 'entries', existingEntry.id))
-          }
-        }else {
-          alert(`This slot is taken`)
-        }
+        alert('This slot is already taken.')
       }
     } else {
+      // Create a new entry
       if (confirm('Are you sure you want to sign up for this slot?')) {
+        const newUsers = ['', '', '', '']
+        newUsers[slotIndex] = user.uid
         await addDoc(collection(db, 'entries'), {
           date: dateString,
           time,
-          username: user.email || user.phoneNumber
-        });
+          users: newUsers
+        })
       }
     }
   }
 
-  const renderTimeSlot = (date: Date, time: string) => {
+  const renderTimeSlot = (date: Date, { label, time }: { label: string; time: string }) => {
     const dateString = format(date, 'yyyy-MM-dd')
     const entry = entries.find(e => e.date === dateString && e.time === time)
-    const isUserEntry = entry && entry.username === (user?.email || user?.phoneNumber)
-    const isTakenByOther = entry && entry.username !== (user?.email || user?.phoneNumber)
     const isDisabled = isWeekend(date) || isHoliday(date)
 
-    // Determine the color code based on who has taken the slot
-    let slotColor = 'bg-green-500' // Available by default
-    if (isDisabled) {
-      slotColor = 'bg-gray-300' // Disabled (weekend/holiday)
-    } else if (isUserEntry) {
-      slotColor = 'bg-amber-500' // Taken by the logged-in user (amber)
-    } else if (isTakenByOther) {
-      slotColor = 'bg-red-500' // Taken by someone else (red)
+    const getSlotColor = (userId: string) => {
+      if (isDisabled) return 'bg-gray-300'
+      if (userId === '') return 'bg-green-500'
+      if (userId === user?.uid) return 'bg-amber-500'
+      return 'bg-red-500'
     }
 
     return (
-        <div
-            key={`${dateString}-${time}`}
-            className={`h-2 w-full ${slotColor} cursor-pointer ${isUserEntry ? 'opacity-50' : ''}`}
-            onClick={() => !isDisabled && handleEntryClick(date, time)}
-            role={isDisabled ? 'presentation' : 'button'}
-            aria-disabled={isDisabled}
-        />
+        <div className="mb-1 last:mb-0">
+          <div className="text-xs font-semibold mb-0.5">{label}</div>
+          <div
+              className={`h-6 w-full ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'} flex space-x-0.5 border border-gray-300 rounded overflow-hidden`}
+              role={isDisabled ? 'presentation' : 'group'}
+              aria-disabled={isDisabled}
+          >
+            {[0, 1, 2, 3].map((index) => (
+                <div
+                    key={index}
+                    className={`h-full w-1/4 ${getSlotColor(entry?.users[index] || '')} ${
+                        !isDisabled ? 'group-hover:opacity-80' : ''
+                    }`}
+                    onClick={() => !isDisabled && handleEntryClick(date, time, index)}
+                    role={isDisabled ? 'presentation' : 'button'}
+                    aria-label={`Slot ${index + 1} for ${time}`}
+                />
+            ))}
+          </div>
+        </div>
     )
   }
 
@@ -139,9 +157,9 @@ export default function Calendar() {
                 isCurrentDay ? 'bg-blue-100' : ''
             } ${isDisabled ? 'bg-gray-200' : ''}`}
         >
-          <div className="text-xs mb-1">{dayString}</div>
+          <div className={`text-xs mb-1 ${isDisabled ? 'text-gray-500' : ''}`}>{dayString}</div>
           <div className="space-y-1">
-            {timeSlots.map(time => renderTimeSlot(date, time))}
+            {timeSlots.map(slot => renderTimeSlot(date, slot))}
           </div>
         </div>
     )
@@ -183,19 +201,20 @@ export default function Calendar() {
         </div>
         <div className="mt-4 text-sm">
           <div className="flex items-center">
-            <div className="w-4 h-4 bg-green-500 mr-2"></div>
+            <div className="w-4 h-4 bg-green-500 mr-2 rounded"></div>
             <span>Available</span>
           </div>
           <div className="flex items-center mt-1">
-            <div className="w-4 h-4 bg-amber-500 mr-2"></div>
-            <span>Taken by You</span>
+
+            <div className="w-4 h-4 bg-amber-500 mr-2 rounded"></div>
+            <span>Signed up by you</span>
           </div>
           <div className="flex items-center mt-1">
-            <div className="w-4 h-4 bg-red-500 mr-2"></div>
-            <span>Taken by Someone Else</span>
+            <div className="w-4 h-4 bg-red-500 mr-2 rounded"></div>
+            <span>Signed up by someone else</span>
           </div>
           <div className="flex items-center mt-1">
-            <div className="w-4 h-4 bg-gray-300 mr-2"></div>
+            <div className="w-4 h-4 bg-gray-300 mr-2 rounded"></div>
             <span>Weekend/Holiday (Not Available)</span>
           </div>
         </div>

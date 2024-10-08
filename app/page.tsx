@@ -1,18 +1,22 @@
- 'use client'
-import Login from './components/Login'
-import Calendar from './components/Calendar'
-import AdminView from './components/AdminView'
-import {DateProvider} from './components/DateProvider'
+'use client'
 
-export default function Home() {
-  return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-4">Volunteer Signup</h1>
-      <Login />
-       <DateProvider>
-           <Calendar />
-           <AdminView />
-       </DateProvider>
-    </div>
-  )
-}
+ import { useState } from 'react'
+ import { useAuth } from './auth-provider'
+ import Login from './components/Login'
+ import Calendar from './components/Calendar'
+ import AdminView from './components/AdminView'
+
+ export default function Home() {
+     const { isAdmin } = useAuth()
+     const [currentDate, setCurrentDate] = useState(new Date())
+
+     return (
+         <main className="container mx-auto px-4 py-8">
+             <h1 className="text-4xl font-bold mb-8">Volunteer Signup</h1>
+             <Login />
+                 <Calendar currentDate={currentDate} setCurrentDate={setCurrentDate} />
+                 {isAdmin && <AdminView currentDate={currentDate} />}
+         </main>
+     )
+ }
+
