@@ -29,17 +29,6 @@ export default function ProfilePage() {
   })
   const [allProfiles, setAllProfiles] = useState<{ [key: string]: UserProfile }>({})
 
-  useEffect(() => {
-    if (!user) {
-      router.push('/')
-    } else {
-      fetchProfile()
-      if (isAdmin) {
-        fetchAllProfiles()
-      }
-    }
-  }, [user])
-
   const fetchProfile = async () => {
     if (user) {
       const docRef = doc(db, 'users', user.uid)
@@ -60,6 +49,17 @@ export default function ProfilePage() {
     })
     setAllProfiles(profiles)
   }
+
+  useEffect(() => {
+    if (!user) {
+      router.push('/')
+    } else {
+      fetchProfile()
+      if (isAdmin) {
+        fetchAllProfiles()
+      }
+    }
+  }, [user, fetchProfile, fetchAllProfiles])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target

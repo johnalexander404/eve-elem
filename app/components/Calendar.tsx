@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth-provider'
 import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
-import {User} from "firebase/auth";
 
 const db = getFirestore()
 

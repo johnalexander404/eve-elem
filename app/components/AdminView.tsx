@@ -46,12 +46,6 @@ export default function AdminView({ currentDate }: { currentDate: Date }) {
     }
   }, [user, isAdmin, currentDate])
 
-  useEffect(() => {
-    if (entries.length > 0) {
-      fetchAllUserData()
-    }
-  }, [entries])
-
   const fetchAllUserData = async () => {
     const userIds = new Set<string>()
     entries.forEach(entry => entry.users.forEach(userId => {
@@ -69,6 +63,13 @@ export default function AdminView({ currentDate }: { currentDate: Date }) {
     }
     setUserData(fetchedUserData)
   }
+
+  useEffect(() => {
+    if (entries.length > 0) {
+      fetchAllUserData()
+    }
+  }, [entries, fetchAllUserData])
+
 
   if (!user || !isAdmin || !entries.length) {
     return null
