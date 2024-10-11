@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '../auth-provider'
 import { getFirestore, collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore'
-import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend } from 'date-fns'
+import { startOfMonth, endOfMonth, eachDayOfInterval, format, isToday, isSameMonth, isWeekend, isPast } from 'date-fns'
 
 const db = getFirestore()
 
@@ -30,9 +30,9 @@ const holidays = [
   '2024-12-24', '2024-12-26', '2024-12-27', '2024-12-30', '2024-12-31',
   // 2025 Holidays
   '2025-01-01', '2024-01-02', '2024-01-03', '2024-01-09', '2025-01-20',
-    '2025-02-17' , '2025-02-18' , '2025-02-19' , '2025-02-20','2025-02-21','2025-03-31',
-    '2025-04-18' , '2025-04-21' , '2025-04-22' , '2025-04-23','2025-04-24','2025-04-25',
-    '2025-05-26', '2025-07-04',
+  '2025-02-17' , '2025-02-18' , '2025-02-19' , '2025-02-20','2025-02-21','2025-03-31',
+  '2025-04-18' , '2025-04-21' , '2025-04-22' , '2025-04-23','2025-04-24','2025-04-25',
+  '2025-05-26', '2025-07-04',
   '2025-09-01', '2025-10-13', '2025-11-11', '2025-11-27', '2025-12-25'
 ]
 
@@ -47,46 +47,49 @@ interface CalendarProps {
 }
 
 interface UserData {
-   id: string
-    name: string
-    email: string
+  id: string
+  name: string
+  email: string
 }
 
 export default function Calendar({ currentDate, setCurrentDate }: CalendarProps) {
   const { user, isAdmin } = useAuth()
   const [entries, setEntries] = useState<Entry[]>([])
-  const [users, setUsers] = useState< UserData[] >([])
+  const [users, setUsers] = useState<UserData[]>([])
+  const calendarRef = useRef<HTMLDivElement>(null)
+  const [touchStart, setTouchStart] = useState<number | null>(null)
+  const [touchEnd, setTouchEnd] = useState<number | null>(null)
 
   useEffect(() => {
-      const startDate = startOfMonth(currentDate)
-      const endDate = endOfMonth(currentDate)
-      const q = query(
-          collection(db, 'entries'),
-          where('date', '>=', format(startDate, 'yyyy-MM-dd')),
-          where('date', '<=', format(endDate, 'yyyy-MM-dd'))
-      )
+    const startDate = startOfMonth(currentDate)
+    const endDate = endOfMonth(currentDate)
+    const q = query(
+        collection(db, 'entries'),
+        where('date', '>=', format(startDate, 'yyyy-MM-dd')),
+        where('date', '<=', format(endDate, 'yyyy-MM-dd'))
+    )
 
-      const uq = query(collection(db, 'users'))
-      const unsubscibeUsers = onSnapshot(uq, (querySnapshot) => {
-        const fetchedUsers: UserData[] = []
-        querySnapshot.forEach((doc) => {
-          fetchedUsers.push({ id: doc.id, ...doc.data() } as UserData)
-        })
-        setUsers(fetchedUsers)
-      });
-
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const fetchedEntries: Entry[] = []
-        querySnapshot.forEach((doc) => {
-          fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
-        })
-        setEntries(fetchedEntries)
+    const uq = query(collection(db, 'users'))
+    const unsubscribeUsers = onSnapshot(uq, (querySnapshot) => {
+      const fetchedUsers: UserData[] = []
+      querySnapshot.forEach((doc) => {
+        fetchedUsers.push({ id: doc.id, ...doc.data() } as UserData)
       })
+      setUsers(fetchedUsers)
+    });
 
-      return () => {
-        unsubscribe()
-        unsubscibeUsers()
-      }
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const fetchedEntries: Entry[] = []
+      querySnapshot.forEach((doc) => {
+        fetchedEntries.push({ id: doc.id, ...doc.data() } as Entry)
+      })
+      setEntries(fetchedEntries)
+    })
+
+    return () => {
+      unsubscribe()
+      unsubscribeUsers()
+    }
   }, [user, currentDate])
 
   const handleEntryClick = async (date: Date, time: string, slotIndex: number) => {
@@ -95,11 +98,14 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
     const dateString = format(date, 'yyyy-MM-dd')
     const existingEntry = entries.find(entry => entry.date === dateString && entry.time === time)
 
+    const confirmMessage = (action: string) =>
+        `Are you sure you want to ${action} for the following slot?\n\nDate: ${format(date, 'MMMM d, yyyy')}\nTime: ${time}\nSlot: ${slotIndex + 1}`
+
     if (existingEntry) {
       const updatedUsers = [...existingEntry.users]
       if (updatedUsers[slotIndex] === user.uid) {
         // Remove user from the slot
-        if (confirm('Are you sure you want to remove your entry?')) {
+        if (confirm(confirmMessage('remove your entry'))) {
           updatedUsers[slotIndex] = ''
           if (updatedUsers.every(u => u === '')) {
             await deleteDoc(doc(db, 'entries', existingEntry.id))
@@ -109,28 +115,29 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
         }
       } else if (updatedUsers[slotIndex] === '') {
         // Add user to the slot
-        if (confirm('Are you sure you want to sign up for this slot?')) {
+        if (confirm(confirmMessage('sign up'))) {
           updatedUsers[slotIndex] = user.uid
           await updateDoc(doc(db, 'entries', existingEntry.id), { users: updatedUsers })
         }
       } else {
         if (isAdmin) {
-            const user = users.find(u => u.id === updatedUsers[slotIndex])
-            if (confirm(`This slot is already taken by ${user?.name} . Do you want to remove it?`)){
-              updatedUsers[slotIndex] = ''
-              if (updatedUsers.every(u => u === '')) {
-                await deleteDoc(doc(db, 'entries', existingEntry.id))
-              } else {
-                await updateDoc(doc(db, 'entries', existingEntry.id), {users: updatedUsers})
-              }
+          const slotUser = users.find(u => u.id === updatedUsers[slotIndex])
+          if (confirm(`This slot is already taken by ${slotUser?.name || 'another user'}. Do you want to remove it?`)){
+            updatedUsers[slotIndex] = ''
+            if (updatedUsers.every(u => u === '')) {
+              await deleteDoc(doc(db, 'entries', existingEntry.id))
+            } else {
+              await updateDoc(doc(db, 'entries', existingEntry.id), {users: updatedUsers})
             }
+          }
         } else {
-          alert(`This slot is already taken by ${updatedUsers[slotIndex]}`)
+          const slotUser = users.find(u => u.id === updatedUsers[slotIndex])
+          alert(`This slot is already taken by ${slotUser?.name || 'another user'}`)
         }
       }
     } else {
       // Create a new entry
-      if (confirm('Are you sure you want to sign up for this slot?')) {
+      if (confirm(confirmMessage('sign up'))) {
         const newUsers = ['', '', '', '']
         newUsers[slotIndex] = user.uid
         await addDoc(collection(db, 'entries'), {
@@ -183,14 +190,16 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
     const isCurrentMonth = isSameMonth(date, currentDate)
     const isCurrentDay = isToday(date)
     const isDisabled = isWeekend(date) || isHoliday(date)
+    const isPastDay = isPast(date)
+
     return (
         <div
             key={date.toString()}
             className={`border p-1 ${isCurrentMonth ? '' : 'bg-gray-100'} ${
                 isCurrentDay ? 'bg-yellow-900' : ''
-            } ${isDisabled ? 'bg-gray-200' : ''}`}
+            } ${isDisabled ? 'bg-gray-200' : ''} ${isPastDay ? 'bg-gray-100' : ''}`}
         >
-          <div className={`text-xs mb-1 ${isDisabled ? 'text-gray-500' : ''}`}>{dayString}</div>
+          <div className={`text-xs mb-1 ${isDisabled ? 'text-gray-500' : ''} ${isPastDay ? 'text-gray-400' : ''}`}>{dayString}</div>
           <div className="space-y-1">
             {timeSlots.map(slot => renderTimeSlot(date, slot))}
           </div>
@@ -202,6 +211,28 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
     start: startOfMonth(currentDate),
     end: endOfMonth(currentDate)
   })
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null)
+    setTouchStart(e.targetTouches[0].clientX)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX)
+  }
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return
+    const distance = touchStart - touchEnd
+    const isLeftSwipe = distance > 50
+    const isRightSwipe = distance < -50
+    if (isLeftSwipe) {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))
+    }
+    if (isRightSwipe) {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
+    }
+  }
 
   return (
       <div className="mt-8">
@@ -221,7 +252,13 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
             Next Month
           </button>
         </div>
-        <div className="grid grid-cols-5 gap-1">
+        <div
+            ref={calendarRef}
+            className="grid grid-cols-5 gap-1"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+        >
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
               <div key={day} className="text-center font-bold">
                 {day}
@@ -238,7 +275,6 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
             <span>Available</span>
           </div>
           <div className="flex items-center mt-1">
-
             <div className="w-4 h-4 bg-amber-500 mr-2 rounded"></div>
             <span>Signed up by you</span>
           </div>
@@ -249,6 +285,10 @@ export default function Calendar({ currentDate, setCurrentDate }: CalendarProps)
           <div className="flex items-center mt-1">
             <div className="w-4 h-4 bg-gray-300 mr-2 rounded"></div>
             <span>Weekend/Holiday (Not Available)</span>
+          </div>
+          <div className="flex items-center mt-1">
+            <div className="w-4 h-4 bg-gray-100 mr-2 rounded"></div>
+            <span>Past days</span>
           </div>
         </div>
       </div>
